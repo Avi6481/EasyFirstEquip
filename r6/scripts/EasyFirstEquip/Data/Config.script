@@ -1,0 +1,145 @@
+public class EasyFEConfig {
+  public static function Ids() -> array<CName> {
+    let ids: array<CName>;
+    ids.PushBack(n"firstequip.enabled");
+    ids.PushBack(n"firstequip.chance");
+    ids.PushBack(n"firstequip.cooldown");
+    ids.PushBack(n"firstequip.repeat");
+    let types: array<CName> = EasyFEWeapons.TypeIds();
+    let i: Int32 = 0;
+    while (i < types.Size()) {
+      ids.PushBack(types[i]);
+      i += 1;
+    }
+    return ids;
+  }
+
+  public static function Kind(optionId: CName) -> Int32 {
+    if (optionId == n"firstequip.chance" || optionId == n"firstequip.cooldown") {
+      return 2;
+    }
+    if (optionId == n"firstequip.repeat") {
+      return 3;
+    }
+    if (optionId == n"firstequip.enabled" || StrBeginsWith(NameToString(optionId), "firstequip.type.")) {
+      return 1;
+    }
+    return 0;
+  }
+
+  public static function Default(optionId: CName) -> Float {
+    if (optionId == n"firstequip.chance") {
+      return 100.0;
+    }
+    if (optionId == n"firstequip.cooldown" || optionId == n"firstequip.repeat") {
+      return 0.0;
+    }
+    return 1.0;
+  }
+
+  public static function Min(optionId: CName) -> Float {
+    if (optionId == n"firstequip.chance") {
+      return 5.0;
+    }
+    return 0.0;
+  }
+
+  public static function Max(optionId: CName) -> Float {
+    if (optionId == n"firstequip.chance") {
+      return 100.0;
+    }
+    if (optionId == n"firstequip.cooldown") {
+      return 120.0;
+    }
+    if (optionId == n"firstequip.repeat") {
+      return 1.0;
+    }
+    return 1.0;
+  }
+
+  private static function Key(optionId: CName) -> String {
+    return "easyfirstequip_" + StrReplaceAll(StrAfterFirst(NameToString(optionId), "firstequip."), ".", "_");
+  }
+
+  private static function Base() -> Int32 {
+    return 1000000000;
+  }
+
+  public static function Get(game: GameInstance, optionId: CName) -> Float {
+    let quests: QuestsSystem = GameInstance.GetQuestsSystem(game);
+    if (!quests) {
+      return EasyFEConfig.Default(optionId);
+    }
+    let stored: Int32 = quests.GetFactStr(EasyFEConfig.Key(optionId));
+    if (stored <= 0) {
+      return EasyFEConfig.Default(optionId);
+    }
+    let kind: Int32 = EasyFEConfig.Kind(optionId);
+    if (kind == 1) {
+      if (stored == 2) {
+        return 1.0;
+      }
+      return 0.0;
+    }
+    if (kind == 2) {
+      let raw: Int32 = stored - EasyFEConfig.Base();
+      let value: Float = Cast<Float>(raw) / 100.0;
+      return ClampF(value, EasyFEConfig.Min(optionId), EasyFEConfig.Max(optionId));
+    }
+    let choice: Int32 = stored - 1;
+    return Cast<Float>(choice);
+  }
+
+  public static function Set(game: GameInstance, optionId: CName, value: Float) -> Void {
+    let quests: QuestsSystem = GameInstance.GetQuestsSystem(game);
+    let kind: Int32 = EasyFEConfig.Kind(optionId);
+    if (!quests || kind == 0) {
+      return;
+    }
+    let key: String = EasyFEConfig.Key(optionId);
+    let clamped: Float = ClampF(value, EasyFEConfig.Min(optionId), EasyFEConfig.Max(optionId));
+    if (kind == 1) {
+      let state: Int32 = 1;
+      if (value > 0.5) {
+        state = 2;
+      }
+      quests.SetFactStr(key, state);
+      return;
+    }
+    if (kind == 2) {
+      let scaled: Float = clamped * 100.0;
+      quests.SetFactStr(key, RoundF(scaled) + EasyFEConfig.Base());
+      return;
+    }
+    quests.SetFactStr(key, RoundF(clamped) + 1);
+  }
+
+  public static function Bool(game: GameInstance, optionId: CName) -> Bool {
+    return EasyFEConfig.Get(game, optionId) > 0.5;
+  }
+
+  public static function Choice(game: GameInstance, optionId: CName) -> Int32 {
+    return RoundF(EasyFEConfig.Get(game, optionId));
+  }
+
+  public static function SetBool(game: GameInstance, optionId: CName, on: Bool) -> Void {
+    let value: Float = 0.0;
+    if (on) {
+      value = 1.0;
+    }
+    EasyFEConfig.Set(game, optionId, value);
+  }
+
+  public static function Reset(game: GameInstance) -> Void {
+    let quests: QuestsSystem = GameInstance.GetQuestsSystem(game);
+    if (!quests) {
+      return;
+    }
+    let ids: array<CName> = EasyFEConfig.Ids();
+    let i: Int32 = 0;
+    while (i < ids.Size()) {
+      quests.SetFactStr(EasyFEConfig.Key(ids[i]), 0);
+      i += 1;
+    }
+  }
+}

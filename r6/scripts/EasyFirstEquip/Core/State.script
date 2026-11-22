@@ -1,0 +1,143 @@
+public class EasyFEState extends ScriptableSystem {
+  private let m_askedWeapon: TweakDBID;
+  private let m_askedAt: Float;
+  private let m_answer: Bool;
+  private let m_lastWeapon: TweakDBID;
+  private let m_lastFlourish: Float;
+  private let m_hasFlourished: Bool;
+  private let m_count: Int32;
+  private let m_joinAt: Float;
+  private let m_msLink: EasyFEModSettingsLink;
+  private let m_joinTries: Int32;
+  private let m_game: GameInstance;
+  private let m_hasGame: Bool;
+
+  private final function OnPlayerAttach(request: PlayerAttachRequest) -> Void {
+    let player: wref<GameObject> = request.owner;
+    if (player) {
+      this.m_game = player.GetGame();
+      this.m_hasGame = true;
+    }
+    this.m_joinTries = 0;
+    this.Connect();
+    this.JoinModSettings();
+  }
+
+  private function Connect() -> Void {
+    let firstEquip: FirstEquipSystem = GameInstance.GetScriptableSystemsContainer(this.Game()).Get(n"FirstEquipSystem") as FirstEquipSystem;
+    if (!firstEquip) {
+      ScriptLog("EasyFE: the game's FirstEquipSystem wasn't found; draws stay vanilla");
+      return;
+    }
+    firstEquip.EasyFEConnect(this);
+    ScriptLog("EasyFE: connected to the game's FirstEquipSystem");
+  }
+
+  public function Game() -> GameInstance {
+    if (!this.m_hasGame) {
+      let player: GameObject = GameInstance.GetPlayerSystem(this.GetGameInstance()).GetLocalPlayerMainGameObject();
+      if (!player) {
+        return this.GetGameInstance();
+      }
+      this.m_game = player.GetGame();
+      this.m_hasGame = true;
+    }
+    return this.m_game;
+  }
+
+  public function JoinModSettings() -> Void {
+    let game: GameInstance = this.Game();
+    this.m_msLink = EasyFEModSettings.Register(game, this.m_msLink);
+    if (EasyFEModSettings.Joined(game) || this.m_joinTries >= 30) {
+      return;
+    }
+    this.m_joinTries += 1;
+    let retry: EasyFEJoinLater = new EasyFEJoinLater;
+    retry.m_state = this;
+    GameInstance.GetDelaySystem(game).DelayCallback(retry, 2.0, false);
+  }
+
+  public static function Get(game: GameInstance) -> EasyFEState {
+    return GameInstance.GetScriptableSystemsContainer(game).Get(n"EasyFEState") as EasyFEState;
+  }
+
+  private function Now() -> Float {
+    return EngineTime.ToFloat(GameInstance.GetSimTime(this.Game()));
+  }
+
+  private static function SameDraw() -> Float {
+    return 2.0;
+  }
+
+  private function KeepJoined() -> Void {
+    let now: Float = this.Now();
+    if (now - this.m_joinAt < 5.0 && now >= this.m_joinAt) {
+      return;
+    }
+    this.m_joinAt = now;
+    this.JoinModSettings();
+  }
+
+  public function Decide(weaponID: TweakDBID, played: Bool) -> Bool {
+    let game: GameInstance = this.Game();
+    this.KeepJoined();
+    let now: Float = this.Now();
+    let since: Float = now - this.m_askedAt;
+    if (weaponID == this.m_askedWeapon && since >= 0.0 && since < EasyFEState.SameDraw()) {
+      this.m_askedAt = now;
+      return this.m_answer;
+    }
+    this.m_askedWeapon = weaponID;
+    this.m_askedAt = now;
+    this.m_answer = played;
+    let why: String = this.Blocked(game, weaponID, now);
+    if (StrLen(why) == 0) {
+      this.m_answer = false;
+      why = "flourish";
+    }
+    let seen: String = "seen before";
+    if (!played) {
+      seen = "first time";
+    }
+    ScriptLog("EasyFE: draw " + TDBID.ToStringDEBUG(weaponID) + " (" + seen + "): " + why);
+    return this.m_answer;
+  }
+
+  private function Blocked(game: GameInstance, weaponID: TweakDBID, now: Float) -> String {
+    if (!EasyFEConfig.Bool(game, n"firstequip.enabled")) {
+      return "off (Enabled is off)";
+    }
+    if (!EasyFEConfig.Bool(game, EasyFEWeapons.TypeId(weaponID))) {
+      return "skipped (its weapon type is off)";
+    }
+    if (EasyFEConfig.Choice(game, n"firstequip.repeat") == 1 && this.m_hasFlourished && weaponID == this.m_lastWeapon) {
+      return "skipped (same weapon as last flourish)";
+    }
+    let cooldown: Float = EasyFEConfig.Get(game, n"firstequip.cooldown");
+    let since: Float = now - this.m_lastFlourish;
+    if (cooldown > 0.0 && this.m_hasFlourished && since >= 0.0 && since < cooldown) {
+      return "skipped (cooldown)";
+    }
+    let chance: Float = EasyFEConfig.Get(game, n"firstequip.chance");
+    if (chance < 100.0 && RandF() * 100.0 >= chance) {
+      return "skipped (chance roll)";
+    }
+    return "";
+  }
+
+  public function Flourished(weaponID: TweakDBID) -> Void {
+    this.m_lastWeapon = weaponID;
+    this.m_lastFlourish = this.Now();
+    this.m_hasFlourished = true;
+    this.m_count += 1;
+  }
+
+  public function ClearCooldown() -> Void {
+    this.m_hasFlourished = false;
+    this.m_askedAt = -100.0;
+  }
+
+  public function Count() -> Int32 {
+    return this.m_count;
+  }
+}

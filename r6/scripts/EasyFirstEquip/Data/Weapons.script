@@ -1,0 +1,57 @@
+public class EasyFEWeapons {
+  public static function TypeIds() -> array<CName> {
+    let ids: array<CName>;
+    ids.PushBack(n"firstequip.type.handguns");
+    ids.PushBack(n"firstequip.type.smgs");
+    ids.PushBack(n"firstequip.type.rifles");
+    ids.PushBack(n"firstequip.type.shotguns");
+    ids.PushBack(n"firstequip.type.snipers");
+    ids.PushBack(n"firstequip.type.blades");
+    ids.PushBack(n"firstequip.type.blunt");
+    ids.PushBack(n"firstequip.type.other");
+    return ids;
+  }
+
+  public static function TypeId(weaponID: TweakDBID) -> CName {
+    let record: wref<Item_Record> = TweakDBInterface.GetItemRecord(weaponID);
+    if (!record) {
+      return n"firstequip.type.other";
+    }
+    let typeRecord: wref<ItemType_Record> = record.ItemType();
+    if (!typeRecord) {
+      return n"firstequip.type.other";
+    }
+    switch (typeRecord.Type()) {
+      case gamedataItemType.Wea_Handgun:
+      case gamedataItemType.Wea_Revolver:
+        return n"firstequip.type.handguns";
+      case gamedataItemType.Wea_SubmachineGun:
+        return n"firstequip.type.smgs";
+      case gamedataItemType.Wea_AssaultRifle:
+      case gamedataItemType.Wea_Rifle:
+      case gamedataItemType.Wea_LightMachineGun:
+      case gamedataItemType.Wea_HeavyMachineGun:
+        return n"firstequip.type.rifles";
+      case gamedataItemType.Wea_Shotgun:
+      case gamedataItemType.Wea_ShotgunDual:
+        return n"firstequip.type.shotguns";
+      case gamedataItemType.Wea_PrecisionRifle:
+      case gamedataItemType.Wea_SniperRifle:
+        return n"firstequip.type.snipers";
+      case gamedataItemType.Wea_Katana:
+      case gamedataItemType.Wea_Sword:
+      case gamedataItemType.Wea_LongBlade:
+      case gamedataItemType.Wea_ShortBlade:
+      case gamedataItemType.Wea_Knife:
+      case gamedataItemType.Wea_Machete:
+      case gamedataItemType.Wea_Chainsword:
+      case gamedataItemType.Wea_Axe:
+        return n"firstequip.type.blades";
+      case gamedataItemType.Wea_Hammer:
+      case gamedataItemType.Wea_OneHandedClub:
+      case gamedataItemType.Wea_TwoHandedClub:
+        return n"firstequip.type.blunt";
+    }
+    return n"firstequip.type.other";
+  }
+}

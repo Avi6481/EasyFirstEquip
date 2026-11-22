@@ -1,0 +1,228 @@
+public class EasyFEModSettingsLink extends GenericNotificationBaseAction {
+  public let m_next: GenericNotificationBaseAction;
+  public let m_game: GameInstance;
+
+  public override function Execute(data: IScriptable) -> Bool {
+    let msg: ListItemData = data as ListItemData;
+    if (msg) {
+      let request: String = EasyFEModSettings.Request(msg.label);
+      if (StrBeginsWith(request, "EASYMS1|")) {
+        msg.label = msg.label + EasyFEModSettings.Answer(this.m_game, request);
+      }
+    }
+    if (this.m_next) {
+      return this.m_next.Execute(data);
+    }
+    return true;
+  }
+}
+
+public class EasyFEJoinLater extends DelayCallback {
+  public let m_state: wref<EasyFEState>;
+
+  public override function Call() -> Void {
+    if (this.m_state) {
+      this.m_state.JoinModSettings();
+    }
+  }
+}
+
+public class EasyFEModSettings {
+  public static function Version() -> String {
+    return "1.1.0";
+  }
+
+  public static function Slot() -> BlackboardID_Variant {
+    return GetAllBlackboardDefs().UIGameData.UIjailbreakData;
+  }
+
+  public static function Register(game: GameInstance, link: EasyFEModSettingsLink) -> EasyFEModSettingsLink {
+    let board: IBlackboard = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UIGameData);
+    if (!board) {
+      ScriptLog("EasyFE: Mod Settings: no UIGameData blackboard");
+      return link;
+    }
+    let head: GenericNotificationBaseAction = board.GetVariant(EasyFEModSettings.Slot()) as GenericNotificationBaseAction;
+    let before: String = "empty";
+    if (head) {
+      if (EasyFEModSettings.Answers(head)) {
+        return link;
+      }
+      before = "other links";
+    }
+    let mine: EasyFEModSettingsLink = link;
+    if (!mine) {
+      mine = new EasyFEModSettingsLink;
+    }
+    mine.m_next = head;
+    mine.m_game = game;
+    let stored: GenericNotificationBaseAction = mine;
+    board.SetVariant(EasyFEModSettings.Slot(), stored);
+    let back: GenericNotificationBaseAction = board.GetVariant(EasyFEModSettings.Slot()) as GenericNotificationBaseAction;
+    let result: String = "slot kept it";
+    if (!back) {
+      result = "FAILED: slot empty right after writing";
+    } else {
+      if (!EasyFEModSettings.Answers(back)) {
+        result = "FAILED: slot holds something else";
+      }
+    }
+    ScriptLog("EasyFE: Mod Settings: joined (slot was " + before + "): " + result);
+    return mine;
+  }
+
+  public static function Joined(game: GameInstance) -> Bool {
+    let board: IBlackboard = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UIGameData);
+    if (!board) {
+      return false;
+    }
+    let head: GenericNotificationBaseAction = board.GetVariant(EasyFEModSettings.Slot()) as GenericNotificationBaseAction;
+    if (!head) {
+      return false;
+    }
+    return EasyFEModSettings.Answers(head);
+  }
+
+  private static function Answers(head: GenericNotificationBaseAction) -> Bool {
+    let probe: ListItemData = new ListItemData;
+    probe.label = "EASYMS1|ping";
+    let handled: Bool = head.Execute(probe);
+    return handled && StrFindFirst(probe.label, "\n##firstequip") >= 0;
+  }
+
+  public static function Request(label: String) -> String {
+    let cut: Int32 = StrFindFirst(label, "\n");
+    if (cut < 0) {
+      return label;
+    }
+    return StrLeft(label, cut);
+  }
+
+  public static function Answer(game: GameInstance, message: String) -> String {
+    let parts: array<String> = StrSplit(message, "|");
+    if (parts.Size() < 2) {
+      return "";
+    }
+    let command: String = parts[1];
+    if (StrCmp(command, "ping") == 0) {
+      return "\n##firstequip";
+    }
+    if (StrCmp(command, "list") == 0) {
+      return "\n" + EasyFEModSettings.Spec();
+    }
+    if (parts.Size() < 3 || !StrBeginsWith(parts[2], "firstequip.")) {
+      return "";
+    }
+    let optionId: CName = StringToName(parts[2]);
+    if (StrCmp(command, "get") == 0) {
+      return "\n@@" + EasyFEModSettings.ValueText(game, optionId);
+    }
+    if (StrCmp(command, "set") == 0 && parts.Size() >= 4) {
+      EasyFEConfig.Set(game, optionId, StringToFloat(parts[3], EasyFEConfig.Default(optionId)));
+      return "\n@@ok";
+    }
+    if (StrCmp(command, "action") == 0) {
+      EasyFEModSettings.Run(game, optionId);
+      return "\n@@ok";
+    }
+    if (StrCmp(command, "info") == 0) {
+      return "\n@@" + EasyFEModSettings.Info(game, optionId);
+    }
+    return "";
+  }
+
+  private static function ValueText(game: GameInstance, optionId: CName) -> String {
+    let kind: Int32 = EasyFEConfig.Kind(optionId);
+    if (kind == 1) {
+      if (EasyFEConfig.Bool(game, optionId)) {
+        return "1";
+      }
+      return "0";
+    }
+    if (kind == 3) {
+      return IntToString(EasyFEConfig.Choice(game, optionId));
+    }
+    return FloatToString(EasyFEConfig.Get(game, optionId));
+  }
+
+  public static function Spec() -> String {
+    let s: String = "mod|firstequip|Easy First Equip|" + EasyFEModSettings.Version() + "|by Avi|Plays a weapon's first-equip flourish when you draw it.\n";
+    s = s + "header|General\n";
+    s = s + "toggle|firstequip.enabled|Enabled|Plays the first-equip flourish when you draw a weapon. Off: the game's normal behaviour.|1|-\n";
+    s = s + "slider|firstequip.chance|Chance|How often a draw plays the flourish.|5|100|5|100|0|%|firstequip.enabled\n";
+    s = s + "slider|firstequip.cooldown|Cooldown|Seconds after a flourish before the next one can play.|0|120|5|0|0| s|firstequip.enabled\n";
+    s = s + "choice|firstequip.repeat|Same Weapon|Every draw: always flourish. New weapon only: skip it when you draw the weapon that flourished last.|Every draw;New weapon only|0|firstequip.enabled\n";
+    s = s + "submenu|types|Weapon Types|Choose which kinds of weapons flourish.|firstequip.enabled\n";
+    s = s + "header|Status\n";
+    s = s + "info|firstequip.info.session|Flourishes This Session|Flourishes played since you loaded this save.\n";
+    s = s + "info|firstequip.info.recorded|Weapons Recorded|Weapons the game has seen drawn (one save entry each).\n";
+    s = s + "button|firstequip.cooldown.clear|Clear Cooldown|Lets the next draw flourish right away.|CLEAR|firstequip.enabled\n";
+    s = s + "header|Reset\n";
+    s = s + "reset|firstequip.reset|Reset to Defaults|Puts every Easy First Equip option back to its default.\n";
+    s = s + "info|firstequip.info.version|Version|Easy First Equip by Avi.\n";
+    s = s + "note|The game never plays it in combat, during scenes or in vehicles.\n";
+    return s + EasyFEModSettings.TypesSpec();
+  }
+
+  private static function TypesSpec() -> String {
+    let s: String = "page|types|Weapon Types\n";
+    s = s + "header|Ranged\n";
+    s = s + "toggle|firstequip.type.handguns|Pistols & Revolvers|Handguns and revolvers.|1|-\n";
+    s = s + "toggle|firstequip.type.smgs|SMGs|Submachine guns.|1|-\n";
+    s = s + "toggle|firstequip.type.rifles|Rifles & LMGs|Assault rifles and machine guns.|1|-\n";
+    s = s + "toggle|firstequip.type.shotguns|Shotguns|Shotguns, including double-barrels.|1|-\n";
+    s = s + "toggle|firstequip.type.snipers|Precision & Sniper Rifles|Precision rifles and sniper rifles.|1|-\n";
+    s = s + "header|Melee\n";
+    s = s + "toggle|firstequip.type.blades|Blades|Katanas, swords, knives, machetes, axes, chainswords.|1|-\n";
+    s = s + "toggle|firstequip.type.blunt|Blunt Weapons|Hammers, clubs and bats.|1|-\n";
+    s = s + "toggle|firstequip.type.other|Everything Else|Fists, launchers and anything without a category above.|1|-\n";
+    s = s + "header|Quick Set\n";
+    s = s + "button|firstequip.types.all|Turn All On|Every weapon type flourishes.|ALL ON|-\n";
+    s = s + "button|firstequip.types.none|Turn All Off|No weapon type flourishes (same as turning the mod off).|ALL OFF|-\n";
+    return s;
+  }
+
+  private static function Run(game: GameInstance, optionId: CName) -> Void {
+    if (optionId == n"firstequip.types.all" || optionId == n"firstequip.types.none") {
+      let on: Bool = optionId == n"firstequip.types.all";
+      let ids: array<CName> = EasyFEWeapons.TypeIds();
+      let i: Int32 = 0;
+      while (i < ids.Size()) {
+        EasyFEConfig.SetBool(game, ids[i], on);
+        i += 1;
+      }
+      return;
+    }
+    if (optionId == n"firstequip.cooldown.clear") {
+      let state: EasyFEState = EasyFEState.Get(game);
+      if (state) {
+        state.ClearCooldown();
+      }
+      return;
+    }
+    if (optionId == n"firstequip.reset") {
+      EasyFEConfig.Reset(game);
+    }
+  }
+
+  private static function Info(game: GameInstance, optionId: CName) -> String {
+    if (optionId == n"firstequip.info.version") {
+      return EasyFEModSettings.Version();
+    }
+    if (optionId == n"firstequip.info.session") {
+      let state: EasyFEState = EasyFEState.Get(game);
+      if (state) {
+        return IntToString(state.Count());
+      }
+      return "0";
+    }
+    if (optionId == n"firstequip.info.recorded") {
+      let firstEquip: FirstEquipSystem = GameInstance.GetScriptableSystemsContainer(game).Get(n"FirstEquipSystem") as FirstEquipSystem;
+      if (firstEquip) {
+        return IntToString(firstEquip.EasyFERecorded());
+      }
+      return "-";
+    }
+    return "";
+  }
+}

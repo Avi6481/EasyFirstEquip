@@ -1,0 +1,39 @@
+@addField(FirstEquipSystem)
+let m_easyFEState: wref<EasyFEState>;
+
+@addMethod(FirstEquipSystem)
+public function EasyFEConnect(state: EasyFEState) -> Void {
+  this.m_easyFEState = state;
+}
+
+@wrapMethod(FirstEquipSystem)
+const function HasPlayedFirstEquip(weaponID: TweakDBID) -> Bool {
+  let played: Bool = HasPlayedFirstEquip(weaponID);
+  let state: EasyFEState = this.m_easyFEState;
+  if (!state) {
+    ScriptLog("EasyFE: the game asked about a draw, but Easy First Equip isn't connected to it");
+    return played;
+  }
+  return state.Decide(weaponID, played);
+}
+
+@wrapMethod(FirstEquipSystem)
+function OnCompletionOfFirstEquip(request: CompletionOfFirstEquipRequest) -> Void {
+  let state: EasyFEState = this.m_easyFEState;
+  if (state) {
+    state.Flourished(request.weaponID);
+  }
+  let i: Int32 = 0;
+  while (i < this.m_equipDataArray.Size()) {
+    if (this.m_equipDataArray[i].weaponID == request.weaponID) {
+      return;
+    }
+    i += 1;
+  }
+  OnCompletionOfFirstEquip(request);
+}
+
+@addMethod(FirstEquipSystem)
+function EasyFERecorded() -> Int32 {
+  return this.m_equipDataArray.Size();
+}
