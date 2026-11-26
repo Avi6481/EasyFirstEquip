@@ -2,7 +2,7 @@
 
 Easy First Equip plays a weapon's first equip animation on later draws too, not just the first time.
 
-It's plain REDmod script, so it works on console.
+Works on console.
 
 ## Settings
 
